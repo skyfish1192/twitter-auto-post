@@ -2,76 +2,70 @@ name: post-to-x
 
 on:
   schedule:
-    - cron: "0 0 * * *"   # UTC 0時 = 日本時間 9時
-  workflow_dispatch: {}    # 手動実行も可能
+    - cron: '0 0 * * *'   # UTC 0時 = 日本時間 9時
+  workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: pip install requests tweepy
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade tweepy requests
 
       - name: Generate tweet via Dify
+        env:
+          DIFY_API_KEY: ${{ secrets.DIFY_API_KEY }}
+          DIFY_WORKFLOW_URL: ${{ secrets.DIFY_WORKFLOW_URL }}
         run: |
-          python - << 'PY'
+          python - <<'PY'
           import os, json, requests
-
           url = os.environ["DIFY_WORKFLOW_URL"]
           headers = {
               "Authorization": f"Bearer {os.environ['DIFY_API_KEY']}",
               "Content-Type": "application/json"
           }
           payload = {
-              "inputs": {"topic": "整形外科の豆知識"},  # 必要なら変数化
+              "inputs": {"topic": "整形外科の豆知識"},
               "user": "scheduler",
               "response_mode": "blocking"
           }
           r = requests.post(url, headers=headers, json=payload, timeout=90)
           r.raise_for_status()
           data = r.json()
-
-          tweet = (data.get("data", {}).get("outputs", {}) or {}).get("tweet_text")
-          if not tweet:
-              tweet = json.dumps(data, ensure_ascii=False)
-
+          tweet = (data.get("data", {}).get("outputs", {}) or {}).get("tweet_text") or json.dumps(data, ensure_ascii=False)
           tweet = tweet.strip()
           if len(tweet) > 280:
               tweet = tweet[:277] + "..."
-
           with open("tweet.txt","w",encoding="utf-8") as f:
               f.write(tweet)
-          print("Tweet candidate:", tweet)
+          print("Generated:", tweet)
           PY
+
+      - name: Post to X (API v2)
         env:
-          DIFY_API_KEY: ${{ secrets.DIFY_API_KEY }}
-          DIFY_WORKFLOW_URL: ${{ secrets.DIFY_WORKFLOW_URL }}
-
-            - name: Post to X (API v2)
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
         run: |
-          python - << 'PY'
-          import os, tweepy
-
-          # v2 Client を初期化
+          python - <<'PY'
+          import os, tweepy, json
+          with open("tweet.txt","r",encoding="utf-8") as f:
+              tweet = f.read().strip()
           client = tweepy.Client(
               consumer_key=os.environ["X_API_KEY"],
               consumer_secret=os.environ["X_API_SECRET"],
               access_token=os.environ["X_ACCESS_TOKEN"],
               access_token_secret=os.environ["X_ACCESS_TOKEN_SECRET"],
           )
-
-          # ツイート本文を読み込み
-          with open("tweet.txt","r",encoding="utf-8") as f:
-              tweet = f.read().strip()
-
-          # v2 の create_tweet で投稿
           resp = client.create_tweet(text=tweet)
-          print("Tweeted. ID:", resp.data.get("id"))
+          print("Tweeted ID:", resp.data.get("id"))
           PY
-        env:
-          X_API_KEY: ${{ secrets.X_API_KEY }}
-          X_API_SECRET: ${{ secrets.X_API_SECRET }}
-          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
-          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+
