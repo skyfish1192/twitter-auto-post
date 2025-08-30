@@ -49,20 +49,26 @@ jobs:
           DIFY_API_KEY: ${{ secrets.DIFY_API_KEY }}
           DIFY_WORKFLOW_URL: ${{ secrets.DIFY_WORKFLOW_URL }}
 
-      - name: Post to X
+            - name: Post to X (API v2)
         run: |
           python - << 'PY'
           import os, tweepy
-          with open("tweet.txt","r",encoding="utf-8") as f:
-              tweet = f.read()
 
-          auth = tweepy.OAuth1UserHandler(
-              os.environ["X_API_KEY"], os.environ["X_API_SECRET"],
-              os.environ["X_ACCESS_TOKEN"], os.environ["X_ACCESS_TOKEN_SECRET"]
+          # v2 Client を初期化
+          client = tweepy.Client(
+              consumer_key=os.environ["X_API_KEY"],
+              consumer_secret=os.environ["X_API_SECRET"],
+              access_token=os.environ["X_ACCESS_TOKEN"],
+              access_token_secret=os.environ["X_ACCESS_TOKEN_SECRET"],
           )
-          api = tweepy.API(auth)
-          api.update_status(status=tweet)
-          print("Posted:", tweet)
+
+          # ツイート本文を読み込み
+          with open("tweet.txt","r",encoding="utf-8") as f:
+              tweet = f.read().strip()
+
+          # v2 の create_tweet で投稿
+          resp = client.create_tweet(text=tweet)
+          print("Tweeted. ID:", resp.data.get("id"))
           PY
         env:
           X_API_KEY: ${{ secrets.X_API_KEY }}
